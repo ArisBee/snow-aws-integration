@@ -37,17 +37,17 @@ Create a new ServiceNow User and give him the admin role so he can use the API.
 
 The stack will ask you all the credentials configured above to interact with ServiceNow:
 
-**APIPassword**: The password configured in the api-gateway authentication profile
-**APIUser**: The login configured in the api-gateway authentication profile
-**LambdaBackendBucket**: Bucket is stored your zip files
-**LambdaBackendKey**: Path to the api.zip file
-**SNOWID:**: ClientID of the ServiceNow Oauth client configured above
-**SNOWInstance**: Name of your ServiceNow instance ( [num_instance] )
-**SNOWPassword**: Password of a ServiceNow API user
-**SNOWSecret**: Client Secret of the ServiceNow Oauth client configured above
-**SNOWUser**: Name of a ServiceNow API user
+**APIPassword**: The password configured in the api-gateway authentication profile  
+**APIUser**: The login configured in the api-gateway authentication profile  
+**LambdaBackendBucket**: Bucket is stored your zip files  
+**LambdaBackendKey**: Path to the api.zip file  
+**SNOWID:**: ClientID of the ServiceNow Oauth client configured above  
+**SNOWInstance**: Name of your ServiceNow instance ( [num_instance] )  
+**SNOWPassword**: Password of a ServiceNow API user  
+**SNOWSecret**: Client Secret of the ServiceNow Oauth client configured above  
+**SNOWUser**: Name of a ServiceNow API user  
 
-# ServiceNow configuration
+### ServiceNow configuration
 
 In the stack created resources, select the new API Gateway called ServiceNowAPI and copy the invoke URL of the POST method in the prod stage:
 
