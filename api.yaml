@@ -1,0 +1,252 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Backend to interact with ServiceNow
+Transform: 'AWS::Serverless-2016-10-31'
+Parameters:
+  SNOWInstance:
+    Type: String
+    MinLength: 1
+    MaxLength: 127
+    Description: Name of the ServiceNow instance    
+  SNOWID:
+    Type: String
+    MinLength: 1
+    MaxLength: 127
+    Description: ServiceNow ClientID to call the API
+  SNOWSecret:  
+    Type: String
+    MinLength: 1
+    MaxLength: 127
+    Description: ServiceNow Client Secret to call the API
+  SNOWUser:  
+    Type: String
+    MinLength: 1
+    MaxLength: 127
+    Description: login of a valid SNOW API user
+  SNOWPassword:  
+    Type: String
+    MinLength: 1
+    MaxLength: 127
+    Description: password of a valid SNOW API user
+  APIUser:
+    Type: String
+    MinLength: 1
+    MaxLength: 127
+    Description: login to authenticate in API Gateway, must be in a SNOW Basic Auth Configuration element
+  APIPassword:
+    Type: String
+    MinLength: 1
+    MaxLength: 127
+    Description: password to authenticate in API Gateway, must be in a SNOW Basic Auth Configuration element
+  LambdaBackendBucket:
+    Type: String
+    MinLength: 1
+    MaxLength: 127
+    Description: Name of the S3 bucket where is the located backend lambda
+  LambdaBackendKey:
+    Type: String
+    Default: /path/to/api.zip
+    MinLength: 1
+    MaxLength: 127
+    Description: Full path of the backend lambda function in the S3 bucket
+
+Resources:
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: cloudwatchLogging
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: arn:aws:logs:*:*:*
+
+  BackendLambda:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: api.lambda_handler
+      Runtime: python3.6
+      CodeUri: 
+        Bucket: !Ref LambdaBackendBucket
+        Key: !Ref LambdaBackendKey
+      Description: 'Get request from SNOW, process and update'
+      MemorySize: 128
+      Timeout: 3
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          Instance: !Ref SNOWInstance
+          clientid: !Ref SNOWID 
+          psswd: !Ref SNOWPassword
+          secret: !Ref SNOWSecret
+          user: !Ref SNOWUser
+
+  AuthorizerLambda:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      Handler: authorizer.handler
+      Runtime: nodejs6.10
+      CodeUri:
+        Bucket: !Ref LambdaBackendBucket
+        Key: authorizer.zip
+      Description: 'API Gateway Basic http authorizer'
+      MemorySize: 128
+      Timeout: 3
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          LOGIN: !Ref APIUser
+          PASWD: !Ref APIPassword
+ 
+  ConfigLambdaPermissionAPI:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BackendLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Join
+        - ""
+        - - "arn:aws:execute-api:"
+          - !Ref "AWS::Region"
+          - ":"
+          - !Ref "AWS::AccountId"
+          - ":"
+          - !Ref ServiceNowAPI
+          - "/*/POST/"
+
+  ConfigLambdaPermissionAuth:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AuthorizerLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Join
+        - ""
+        - - "arn:aws:execute-api:"
+          - !Ref "AWS::Region"
+          - ":"
+          - !Ref "AWS::AccountId"
+          - ":"
+          - !Ref ServiceNowAPI
+          - "/authorizers/*"
+
+  ServiceNowAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+        StageName: prod
+        DefinitionBody: 
+          swagger: "2.0"
+          info:
+            version: "1.0"
+            title: "ServiceNowAPI"  
+          basePath: "/prod"
+          schemes:
+          - "https"
+          paths:
+            /:
+              post:
+                consumes:
+                - "application/json"
+                produces:
+                - "application/json"
+                responses:
+                  '200':
+                    description: "200 response"
+                    schema:
+                      $ref: "#/definitions/Empty"
+                security:
+                - snow_lamb: []
+                x-amazon-apigateway-integration:
+                  uri: !Join
+                    - ""
+                    - - "arn:aws:apigateway:"
+                      - !Ref "AWS::Region"
+                      - ":lambda:path/2015-03-31/functions/"
+                      - !GetAtt BackendLambda.Arn
+                      - "/invocations"
+                  responses:
+                    default:
+                      statusCode: "200"
+                  passthroughBehavior: "when_no_templates"
+                  httpMethod: "POST"
+                  requestTemplates:
+                    application/json: "##  See http://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html\n\
+                      ##  This template will pass through all parameters including path, querystring,\
+                      \ header, stage variables, and context through to the integration endpoint\
+                      \ via the body/payload\n#set($allParams = $input.params())\n{\n\"body-json\"\
+                      \ : $input.json('$'),\n\"params\" : {\n#foreach($type in $allParams.keySet())\n\
+                      \    #set($params = $allParams.get($type))\n\"$type\" : {\n    #foreach($paramName\
+                      \ in $params.keySet())\n    \"$paramName\" : \"$util.escapeJavaScript($params.get($paramName))\"\
+                      \n        #if($foreach.hasNext),#end\n    #end\n}\n    #if($foreach.hasNext),#end\n\
+                      #end\n},\n\"stage-variables\" : {\n#foreach($key in $stageVariables.keySet())\n\
+                      \"$key\" : \"$util.escapeJavaScript($stageVariables.get($key))\"\n   \
+                      \ #if($foreach.hasNext),#end\n#end\n},\n\"context\" : {\n    \"account-id\"\
+                      \ : \"$context.identity.accountId\",\n    \"api-id\" : \"$context.apiId\"\
+                      ,\n    \"api-key\" : \"$context.identity.apiKey\",\n    \"authorizer-principal-id\"\
+                      \ : \"$context.authorizer.principalId\",\n    \"caller\" : \"$context.identity.caller\"\
+                      ,\n    \"cognito-authentication-provider\" : \"$context.identity.cognitoAuthenticationProvider\"\
+                      ,\n    \"cognito-authentication-type\" : \"$context.identity.cognitoAuthenticationType\"\
+                      ,\n    \"cognito-identity-id\" : \"$context.identity.cognitoIdentityId\"\
+                      ,\n    \"cognito-identity-pool-id\" : \"$context.identity.cognitoIdentityPoolId\"\
+                      ,\n    \"http-method\" : \"$context.httpMethod\",\n    \"stage\" : \"\
+                      $context.stage\",\n    \"source-ip\" : \"$context.identity.sourceIp\"\
+                      ,\n    \"user\" : \"$context.identity.user\",\n    \"user-agent\" : \"\
+                      $context.identity.userAgent\",\n    \"user-arn\" : \"$context.identity.userArn\"\
+                      ,\n    \"request-id\" : \"$context.requestId\",\n    \"resource-id\" :\
+                      \ \"$context.resourceId\",\n    \"resource-path\" : \"$context.resourcePath\"\
+                      \n    }\n}\n"
+                  contentHandling: "CONVERT_TO_TEXT"
+                  type: "aws"
+          securityDefinitions:
+            snow_lamb:
+              type: "apiKey"
+              name: "Authorization"
+              in: "header"
+              x-amazon-apigateway-authtype: "custom"
+              x-amazon-apigateway-authorizer:
+                authorizerUri: !Join
+                  - ""
+                  - - "arn:aws:apigateway:"
+                    - !Ref "AWS::Region"
+                    - ":lambda:path/2015-03-31/functions/"
+                    - !GetAtt AuthorizerLambda.Arn
+                    - "/invocations"
+                authorizerResultTtlInSeconds: 0
+                identitySource: "method.request.header.Authorization"
+                type: "request"
+          definitions:
+            Empty:
+              type: "object"
+              title: "Empty Schema"
+          x-amazon-apigateway-gateway-responses:
+            UNAUTHORIZED:
+              statusCode: 401
+              responseParameters:
+                gatewayresponse.header.WWW-Authenticate: "'Basic'"
+              responseTemplates:
+                application/json: "{\"message\":$context.error.messageString}"
+
+Outputs: 
+  API:
+    Description: API for SNOW interraction
+    Value:
+      Ref: ServiceNowAPI
+  BackendFunction: 
+    Description: Function receiving and parsing Output REST message from SNOW
+    Value:
+      Ref: BackendLambda    
