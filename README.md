@@ -169,5 +169,5 @@ In order not to mess up more with S3 bucket location for this small function.
  
 ## Support
 
-Please [open an issue](https://confluence.gemalto.com/pages/viewpage.action?pageId=278568171) for support.
+In case of bug open an issue on the [github repository]() or send me an [email](mailto:webmaster@aristidebouix.cloud) for support.
 
