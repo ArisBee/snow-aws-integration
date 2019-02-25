@@ -169,5 +169,5 @@ In order not to mess up more with S3 bucket location for this small function.
  
 ## Support
 
-In case of bug open an issue on the [github repository]() or send me an [email](mailto:webmaster@aristidebouix.cloud) for support.
+In case of bug open an issue on the [github repository](https://github.com/Kharkovlanok/snow-aws-integration/issues) or send me an [email](mailto:webmaster@aristidebouix.cloud) for support.
 
